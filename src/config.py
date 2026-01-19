@@ -13,5 +13,5 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
 # Run Configuration
-OUTPUT_BASE_DIR = Path("output")
-OUTPUT_BASE_DIR.mkdir(exist_ok=True)
+# OUTPUT_BASE_DIR = Path("output")
+# OUTPUT_BASE_DIR.mkdir(exist_ok=True)
