@@ -15,3 +15,16 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 # Run Configuration
 # OUTPUT_BASE_DIR = Path("output")
 # OUTPUT_BASE_DIR.mkdir(exist_ok=True)
+
+# Hugging Face Auth
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+if HUGGINGFACE_TOKEN:
+    try:
+        from huggingface_hub import login
+        print(f"Logging in to Hugging Face Hub...")
+        login(token=HUGGINGFACE_TOKEN)
+        print("✓ Successfully logged in to Hugging Face.")
+    except ImportError:
+        print("Warning: huggingface_hub not installed. Cannot login.")
+    except Exception as e:
+        print(f"Warning: Failed to login to Hugging Face: {e}")
