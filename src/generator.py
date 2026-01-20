@@ -1,5 +1,5 @@
 import torch
-from diffusers import Flux2KleinPipeline
+from diffusers import FluxPipeline
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 from PIL import Image
@@ -29,7 +29,7 @@ class ImageGenerator:
             )
             
             print("Step 2: Loading base pipeline structure...")
-            self.pipe = Flux2KleinPipeline.from_pretrained(
+            self.pipe = FluxPipeline.from_pretrained(
                 "black-forest-labs/FLUX.2-klein-4B",
                 torch_dtype=self.dtype,
             )
@@ -40,14 +40,14 @@ class ImageGenerator:
 
         elif self.model_type == "4b":
             print("Loading Standard FLUX.2-klein-4B...")
-            self.pipe = Flux2KleinPipeline.from_pretrained(
+            self.pipe = FluxPipeline.from_pretrained(
                 "black-forest-labs/FLUX.2-klein-4B", 
                 torch_dtype=self.dtype
             )
 
         elif self.model_type == "9b":
             print("Loading Standard FLUX.2-klein-9B...")
-            self.pipe = Flux2KleinPipeline.from_pretrained(
+            self.pipe = FluxPipeline.from_pretrained(
                 "black-forest-labs/FLUX.2-klein-9B", 
                 torch_dtype=self.dtype
             )
@@ -58,7 +58,7 @@ class ImageGenerator:
         self.pipe.to(self.device)
         print("✓ Model ready!")
         
-    def generate(self, prompt: str, height=1024, width=1024, steps=None, guidance=None, seed=None) -> Image.Image:
+    def generate(self, prompt: str, height=1024, width=1024, steps=None, guidance=None, seed=None, image=None, strength=0.75) -> Image.Image:
         # Defaults based on model type if not provided
         if steps is None:
             steps = 4 if self.model_type in ["nvfp4", "4b"] else 4 # Assuming 9B is also distilled for 4 steps, or user can override
@@ -70,13 +70,27 @@ class ImageGenerator:
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
             
+        submit_img_kwargs = {}
+        if image is not None:
+            # We need to switch to Img2Img pipeline for editing
+            from diffusers import FluxImg2ImgPipeline
+            
+            # Check if self.pipe is already I2I, if not cast it
+            if not isinstance(self.pipe, FluxImg2ImgPipeline):
+                # print("Converting pipeline to FluxImg2ImgPipeline...")
+                self.pipe = FluxImg2ImgPipeline.from_pipe(self.pipe)
+            
+            submit_img_kwargs["image"] = image
+            submit_img_kwargs["strength"] = strength
+        
         image = self.pipe(
             prompt=prompt,
             height=height,
             width=width,
             guidance_scale=guidance,
             num_inference_steps=steps,
-            generator=generator
+            generator=generator,
+            **submit_img_kwargs
         ).images[0]
         
         return image

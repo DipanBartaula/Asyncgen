@@ -40,6 +40,58 @@ class AsyncUploader:
         except Exception as e:
             print(f"❌ Error uploading {gender}/{prompt_number}: {e}")
 
+    async def download_image(self, key: str) -> Image.Image:
+        """
+        Downloads an image from S3 and returns a PIL Image object.
+        """
+        try:
+            async with self.session.client("s3", region_name=S3_REGION) as s3:
+                response = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+                image_data = await response['Body'].read()
+                return Image.open(BytesIO(image_data)).convert("RGB")
+        except Exception as e:
+            print(f"Error downloading image {key}: {e}")
+            return None
+
+    async def download_text(self, key: str) -> str:
+        """
+        Downloads a text file from S3 and returns its content string.
+        """
+        try:
+            async with self.session.client("s3", region_name=S3_REGION) as s3:
+                response = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+                text_data = await response['Body'].read()
+                return text_data.decode('utf-8')
+        except Exception as e:
+            print(f"Error downloading text {key}: {e}")
+            return None
+
+    async def upload_edited_image(self, image: Image.Image, key: str):
+        """
+        Uploads the edited image to the specified S3 key.
+        """
+        # print(f"Uploading edited image to {key}...")
+        try:
+            async with self.session.client("s3", region_name=S3_REGION) as s3:
+                img_buffer = BytesIO()
+                image.save(img_buffer, format="PNG")
+                img_buffer.seek(0)
+                await s3.upload_fileobj(img_buffer, S3_BUCKET_NAME, key)
+                print(f"✓ Uploaded: {key}")
+        except Exception as e:
+            print(f"❌ Error uploading edited image {key}: {e}")
+
+    async def check_exists(self, key: str) -> bool:
+        """
+        Checks if a file exists in S3.
+        """
+        try:
+             async with self.session.client("s3", region_name=S3_REGION) as s3:
+                await s3.head_object(Bucket=S3_BUCKET_NAME, Key=key)
+                return True
+        except:
+            return False
+
     async def get_existing_prompts(self, gender: str) -> set:
         """
         Scan S3 for existing images in {gender}/images/ to support resuming.

@@ -15,6 +15,8 @@ This project generates images using the **FLUX.2-klein-4B** model (by default) a
     S3_BUCKET_NAME=your-bucket-name
     S3_REGION=us-east-1
     S3_PREFIX=generated_images
+    AWS_ACCESS_KEY_ID=YOUR_KEY
+    AWS_SECRET_ACCESS_KEY=YOUR_KEY
     ```
     Ensure you have AWS credentials configured (e.g., in `~/.aws/credentials` or via `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`).
 

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# VS Code
+.vscode/
+
+# Project specific
+output/
+dataset/
+generated_images/
+*.log

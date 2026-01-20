@@ -78,26 +78,8 @@ Setting: {setting}
 
 {prompt_text}"""
 
-        # Save Locally
-        # Structure: output/{gender}/images/{number}.png and output/{gender}/prompts/{number}.txt
-        from src.config import OUTPUT_BASE_DIR
-        local_gender_dir = OUTPUT_BASE_DIR / gender
-        local_images_dir = local_gender_dir / "images"
-        local_prompts_dir = local_gender_dir / "prompts"
-        
-        local_images_dir.mkdir(parents=True, exist_ok=True)
-        local_prompts_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save Local Image
-        local_image_path = local_images_dir / f"{prompt_number}.png"
-        image.save(local_image_path)
-        
-        # Save Local Text
-        local_text_path = local_prompts_dir / f"{prompt_number}.txt"
-        with open(local_text_path, "w", encoding="utf-8") as f:
-            f.write(text_content)
-            
-        print(f"✓ Saved locally to {local_gender_dir}")
+        # Upload to S3 (Directly from memory)
+        print(f"Queueing upload to S3 for {gender}/{prompt_number}...")
 
         # Fire off async upload (Pass gender to handle paths)
         task = asyncio.create_task(
