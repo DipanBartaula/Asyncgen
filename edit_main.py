@@ -92,23 +92,23 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
         print(f"Skipping {target_key} (Already exists)")
         return
 
-    print(f"Processing: Prompt={s3_key} -> Img={source_img_key} -> Out={target_key}")
-
     # 3. Download Inputs (IO Bound - Parallelize)
+    print(f"[{stem}] Downloading source image: {source_img_key}")
     source_image = await uploader.download_image(source_img_key)
     if source_image is None:
-        print(f"Skipping {stem}: Source image not found ({source_img_key})")
+        print(f"[{stem}] SKIPPING: Source image not found ({source_img_key})")
         return
         
+    print(f"[{stem}] Downloading prompt text: {s3_key}")
     prompt_text = await uploader.download_text(s3_key)
     if not prompt_text:
-            print(f"Skipping {stem}: Prompt text is empty or missing")
+            print(f"[{stem}] SKIPPING: Prompt text is empty or missing")
             return
     
     # 4. Generate (GPU Bound - Serialized)
-    print(f"Waiting for GPU slot for {stem}...")
+    print(f"[{stem}] Waiting for GPU slot...")
     async with semaphore:
-        print(f"Generating {stem}...")
+        print(f"[{stem}] GPU SLOT ACQUIRED. Starting generation...")
         try:
             result_image = await asyncio.to_thread(
                 generator.generate,
@@ -118,12 +118,15 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
                 width=source_image.width, 
                 height=source_image.height
             )
+            print(f"[{stem}] Generation COMPLETED successfully.")
         except Exception as e:
-            print(f"Generation failed for {stem}: {e}")
+            print(f"[{stem}] FAILURE during generation: {e}")
             return
 
     # 5. Upload (IO Bound - Parallelize)
+    print(f"[{stem}] Uploading result to: {target_key}")
     await uploader.upload_edited_image(result_image, target_key)
+    print(f"[{stem}] DONE. Process finished.")
 
 async def main(model_type="9b", difficulty_target=None, partition_target=None, gender_target=None):
     print(f"Initializing Edit Pipeline with Model: {model_type}")
