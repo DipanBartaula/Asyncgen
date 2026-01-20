@@ -176,8 +176,9 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
                     # Check Partition Filter
                     if partition_target:
                         parts = key.split('/')
-                        # .../edit_female/partition_0/file.txt -> parts[-2] is partition
-                        if len(parts) >= 2 and parts[-2] == partition_target:
+                        # Robust check: Check if the specific partition folder exists in the path
+                        # dataset/edit_prompts/easy/edit_female/partition_0/image.txt
+                        if partition_target in parts:
                              pass # Match
                         else:
                              continue
