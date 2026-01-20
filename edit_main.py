@@ -125,9 +125,10 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
     # 5. Upload (IO Bound - Parallelize)
     await uploader.upload_edited_image(result_image, target_key)
 
-async def main(model_type="9b", difficulty_target=None, partition_target=None):
+async def main(model_type="9b", difficulty_target=None, partition_target=None, gender_target=None):
     print(f"Initializing Edit Pipeline with Model: {model_type}")
     print(f"Targeting Difficulty: {difficulty_target if difficulty_target else 'ALL'}")
+    print(f"Targeting Gender: {gender_target if gender_target else 'ALL'}")
     print(f"Targeting Partition: {partition_target if partition_target else 'ALL'}")
     
     # Init Generator
@@ -138,15 +139,15 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None):
     uploader = AsyncUploader()
     
     # List Prompts
-    # If a specific target is set, we can optimize the prefix scan to avoid scanning everything!
-    # Structure: dataset/edit_prompts/{difficulty}/{gender_dir}/{partition}/...
-    
     scan_prefix = EDIT_PROMPTS_PREFIX
     if difficulty_target:
         scan_prefix = f"{EDIT_PROMPTS_PREFIX}{difficulty_target}/"
-        # If we have difficulty, we might not be able to easily jump to specific partition 
-        # because of the {gender_dir} layer in between (edit_female/edit_male).
-        # We will scan the difficulty folder and filter by partition in code.
+        # Optional: If we have gender, AND difficulty, we could narrow down prefix further:
+        # scan_prefix = ".../easy/edit_female/"
+        if gender_target:
+             # Map 'female' -> 'edit_female', 'male' -> 'edit_male'
+             gender_dir = f"edit_{gender_target}"
+             scan_prefix = f"{scan_prefix}{gender_dir}/"
     
     print(f"Scanning prompts in {S3_BUCKET_NAME}/{scan_prefix}...")
     
@@ -164,7 +165,7 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None):
     paginator = s3_client.get_paginator("list_objects_v2")
     
     # Limit concurrency
-    semaphore = asyncio.Semaphore(1) # Processing one at a time per GPU really
+    semaphore = asyncio.Semaphore(1) 
     
     prompt_files = []
     for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=scan_prefix):
@@ -174,15 +175,20 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None):
                 if key.endswith(".txt"):
                     # Check Partition Filter
                     if partition_target:
-                        # key example: .../partition_0/1_0.txt
-                        # robust check: is '/{partition_target}/' in the path?
-                        # or specifically check the parent folder name.
                         parts = key.split('/')
+                        # .../edit_female/partition_0/file.txt -> parts[-2] is partition
                         if len(parts) >= 2 and parts[-2] == partition_target:
-                             prompt_files.append(key)
-                        # If the folder structure is strict: .../{partition}/file.txt
-                    else:
-                        prompt_files.append(key)
+                             pass # Match
+                        else:
+                             continue
+                    
+                    # Check Gender Filter (Explicit check just in case prefix didn't cover it or mixed usage)
+                    if gender_target:
+                        # Expect 'edit_female' or 'edit_male' in path
+                         if f"edit_{gender_target}" not in key:
+                             continue
+
+                    prompt_files.append(key)
                     
     print(f"Found {len(prompt_files)} matching prompt files. Queuing...")
 
@@ -190,11 +196,11 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None):
     for key in prompt_files:
         info = parse_s3_key_info(key)
         if info:
-            # Double check difficulty here if our prefix scan wasn't perfect (e.g. if we scanned root)
             if difficulty_target and info["difficulty"] != difficulty_target:
                 continue
+            if gender_target and info["gender"] != gender_target:
+                continue
                 
-            # Create task
             tasks.append(process_prompt(generator, uploader, key, info, semaphore))
             total_tasks += 1
             
@@ -210,6 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="9b", help="Model type (default: 9b)")
     parser.add_argument("--difficulty", type=str, default=None, choices=["easy", "medium", "hard"], help="Filter by difficulty (easy/medium/hard)")
     parser.add_argument("--partition", type=str, default=None, help="Filter by partition folder name (e.g., partition_0)")
+    parser.add_argument("--gender", type=str, default=None, choices=["male", "female"], help="Filter by gender (male/female)")
     
     args = parser.parse_args()
     
@@ -219,4 +226,4 @@ if __name__ == "__main__":
     except:
         pass
         
-    asyncio.run(main(model_type=args.model, difficulty_target=args.difficulty, partition_target=args.partition))
+    asyncio.run(main(model_type=args.model, difficulty_target=args.difficulty, partition_target=args.partition, gender_target=args.gender))
