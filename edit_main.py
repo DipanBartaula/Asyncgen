@@ -83,6 +83,16 @@ def parse_s3_key_info(key):
         "stem": stem
     }
 
+async def main(model_type="9b", difficulty_target=None, partition_target=None, gender_target=None):
+    print(f"Initializing Edit Pipeline with Model: {model_type}")
+    print(f"Targeting Difficulty: {difficulty_target if difficulty_target else 'ALL'}")
+    print(f"Targeting Gender: {gender_target if gender_target else 'ALL'}")
+    print(f"Targeting Partition: {partition_target if partition_target else 'ALL'}")
+    
+    # Init Generator
+    generator = ImageGenerator(model_type=model_type)
+    generator.load_model()
+    
     # Init Uploader
     uploader = AsyncUploader()
     
@@ -154,6 +164,8 @@ def parse_s3_key_info(key):
     print(f"Scanning prompts in {S3_BUCKET_NAME}/{scan_prefix}...")
     
     tasks = []
+    
+    # We use the same s3_client for paginator
     paginator = s3_client.get_paginator("list_objects_v2")
     
     # Limit concurrency
