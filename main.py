@@ -8,18 +8,7 @@ from src.config import S3_PREFIX
 
 async def main(model_type="4b", target_gender="all"):
     # 1. Setup
-    # Define files by gender
-    male_files = ["prompts_male1_reindexed.jsonl", "prompts_male_reindexed.jsonl"]
-    female_files = ["prompts_female1_reindexed.jsonl", "prompts_female_reindexed.jsonl"]
-    
-    jsonl_files = []
-    if target_gender == "all" or target_gender == "male":
-        jsonl_files.extend(male_files)
-    if target_gender == "all" or target_gender == "female":
-        jsonl_files.extend(female_files)
-        
     print(f"Targeting Gender(s): {target_gender.upper()}")
-    print(f"Processing {len(jsonl_files)} files: {jsonl_files}")
     
     # Initialize Generator (Sync, Heavy Resource)
     generator = ImageGenerator(model_type=model_type)
@@ -39,10 +28,27 @@ async def main(model_type="4b", target_gender="all"):
 
     upload_tasks = []
     
+    # Fetch prompts from S3
+    # Assuming prompts are stored in "dataset/prompts/" as per previous context or we can make it configurable
+    # If the user has specific folders per gender, we might need to fetch multiple prefixes.
+    # For now, let's assume a general "dataset/prompts/" prefix or similar.
+    # If the user meant the 'edit_prompts', that's in edit_main.py. 
+    # For generation, we likely need a source of truth for prompts. 
+    # Since the JSONL files were "prompts_male...jsonl", we assume they are now individual text files in S3.
+    
+    s3_prompts = []
+    # Fetch male prompts if needed
+    if target_gender in ["all", "male"]:
+         # Assuming structured as dataset/prompts/male/ from previous discussions or just dataset/prompts/
+         # Let's try fetching from a probable location. The user didn't strictly specify the S3 source folder for *generation* prompts, 
+         # but `edit_main.py` uses `dataset/edit_prompts/`. 
+         # Let's assume a strictly defined path `dataset/prompts/`.
+         s3_prompts.extend(await uploader.fetch_prompts_from_s3(prefix="dataset/prompts/"))
+
     # 2. Processing Loop
     print("Starting generation loop...")
     
-    for prompt_data in parse_prompts(jsonl_files):
+    for prompt_data in s3_prompts:
         prompt_number = prompt_data.get("prompt_number")
         prompt_text = prompt_data.get("prompt", "")
         dress_name = prompt_data.get("dress_name", "N/A")
