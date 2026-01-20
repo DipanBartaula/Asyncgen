@@ -125,3 +125,85 @@ class AsyncUploader:
             
         print(f"Found {len(existing_prompts)} existing prompts for {gender} in S3.")
         return existing_prompts
+
+    async def fetch_prompts_from_s3(self, prefix: str = "dataset/prompts/") -> list:
+        """
+        Fetch prompt text files from S3 and return a list of dictionaries 
+        compatible with the main pipeline.
+        Expected structure: dataset/prompts/{filename}.txt
+        Filename format assumed: {gender}_{number}.txt or just {number}.txt (logic to be defined)
+        """
+        prompts = []
+        print(f"Fetching prompts from S3: {S3_BUCKET_NAME}/{prefix}")
+        try:
+            async with self.session.client("s3", region_name=S3_REGION) as s3:
+                paginator = s3.get_paginator("list_objects_v2")
+                async for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=prefix):
+                    if "Contents" in page:
+                        for obj in page["Contents"]:
+                            key = obj["Key"]
+                            if not key.endswith(".txt"):
+                                continue
+                            
+                            # Download text
+                            response = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+                            text_data = await response['Body'].read()
+                            prompt_text = text_data.decode('utf-8').strip()
+                            
+                            # Parse metadata from content or filename?
+                            # Assuming content has headers like "Gender: female" is safer if available,
+                            # otherwise inferred from filename or folder.
+                            # For now, simplistic parsing or regex could be used if headers exist,
+                            # but let's assume raw text and filename inference for basic attributes.
+                            
+                            filename = os.path.basename(key)
+                            stem = os.path.splitext(filename)[0]
+                            
+                            # Heuristic: female_1.txt -> gender=female, number=1
+                            gender = "unknown"
+                            prompt_number = stem
+                            
+                            if "female" in filename.lower():
+                                gender = "female"
+                            elif "male" in filename.lower():
+                                gender = "male"
+                                
+                            # If content has metadata headers (YAML/Key-Value)
+                            dress_name = "N/A"
+                            setting = "N/A"
+                            
+                            # Simple parsing if format matches:
+                            # Gender: ...
+                            # Dress Name: ...
+                            
+                            lines = prompt_text.split('\n')
+                            final_text = []
+                            for line in lines:
+                                if ":" in line and len(line.split(":")[0]) < 20: # Key-value candidate
+                                    k, v = line.split(":", 1)
+                                    k = k.strip().lower()
+                                    v = v.strip()
+                                    if k == "gender": gender = v.lower()
+                                    elif k == "prompt number": prompt_number = v
+                                    elif k == "dress name": dress_name = v
+                                    elif k == "setting": setting = v
+                                else:
+                                    final_text.append(line)
+                            
+                            # Reassemble prompt text (removing consumed headers)
+                            clean_prompt = "\n".join(final_text).strip()
+                            
+                            prompts.append({
+                                "prompt_number": prompt_number,
+                                "prompt": clean_prompt if clean_prompt else prompt_text, # Fallback
+                                "gender": gender,
+                                "dress_name": dress_name,
+                                "setting": setting,
+                                "s3_key": key
+                            })
+                            
+        except Exception as e:
+             print(f"Error fetching prompts from S3: {e}")
+             
+        print(f"Loaded {len(prompts)} prompts from S3.")
+        return prompts
