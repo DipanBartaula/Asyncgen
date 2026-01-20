@@ -3,9 +3,7 @@ import os
 # Configuration
 difficulties = ["easy", "medium", "hard"]
 genders = ["female", "male"]
-partitions = 6 # 0 to 5 (Generating up to 5 just in case to be safe, or stick to 0-3 if known. User previously had 4 (0-3). Let's do 4.)
-# Actually, let's make it configurable or standard 4.
-partitions_count = 4
+partitions_count = 16
 
 # Template for .sh script (Specific Partition)
 sh_template = """#!/bin/bash
