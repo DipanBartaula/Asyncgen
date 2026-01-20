@@ -3,7 +3,7 @@ import os
 # Configuration
 difficulties = ["easy", "medium", "hard"]
 genders = ["female", "male"]
-partitions_count = 16
+partitions_count = 7
 
 # Template for .sh script (Specific Partition)
 sh_template = """#!/bin/bash
