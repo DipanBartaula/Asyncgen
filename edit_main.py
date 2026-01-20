@@ -1,6 +1,7 @@
 import asyncio
 import os
 import argparse
+import boto3
 from src.generator import ImageGenerator
 from src.s3_uploader import AsyncUploader
 from src.config import S3_BUCKET_NAME, S3_REGION
