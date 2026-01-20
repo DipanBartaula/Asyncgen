@@ -26,13 +26,24 @@ def parse_s3_key_info(key):
     
     # We need at least difficulty, gender_dir, and filename
     # Structure: easy/edit_female/partition_0/1_0.txt  (4 parts)
-    # Structure: easy/edit_female/1_0.txt (3 parts - if partition is missing)
     
     if len(parts) < 3:
         return None
         
     difficulty = parts[0] # easy, medium, hard
     gender_dir = parts[1] # edit_female, edit_male
+    
+    # Try to identify partition folder
+    # It usually comes after gender_dir and before filename
+    # parts: ['easy', 'edit_female', 'partition_0', '1044_3_edit.txt']
+    # If standard structure: parts[-2] is usually partition
+    partition_name = "unknown_partition"
+    if len(parts) >= 3:
+        # Check if the folder before filename starts with 'partition'
+        possible_part = parts[-2]
+        if "partition" in possible_part:
+            partition_name = possible_part
+            
     filename = parts[-1]
     
     if not filename.endswith(".txt"):
@@ -45,13 +56,15 @@ def parse_s3_key_info(key):
     if "_" not in stem:
         image_id = stem
         epoch = "0"
+        remainder = "edit"
     else:
         # Split on underscores
         # "1044_3_edit" -> ['1044', '3', 'edit']
         subparts = stem.split('_')
         image_id = subparts[0]
         # epoch logic is less critical but we can store the rest
-        epoch = "_".join(subparts[1:]) 
+        # We need the '3_edit' part
+        remainder = "_".join(subparts[1:])
         
     # Map gender
     if "female" in gender_dir:
@@ -65,7 +78,8 @@ def parse_s3_key_info(key):
         "difficulty": difficulty,
         "gender": result_gender, 
         "image_id": image_id,
-        "epoch": epoch,
+        "partition": partition_name,
+        "remainder": remainder,
         "stem": stem
     }
 
@@ -73,6 +87,8 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
     difficulty = info["difficulty"]
     gender = info["gender"]
     image_id = info["image_id"]
+    partition = info.get("partition", "unknown")
+    remainder = info.get("remainder", "")
     stem = info["stem"]
     
     # 1. Define Paths
@@ -82,10 +98,12 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
     else:
         source_img_key = f"{SOURCE_IMAGES_BASE_MALE}{image_id}.png"
         
-    # Target Output (FLATTENED as requested - No Partition Folder)
-    # Output: edited_images/{difficulty}/{gender}/{stem}.png
-    # Example: edited_images/easy/female/1044_3_edit.png
-    target_key = f"{OUTPUT_BASE}{difficulty}/{gender}/{stem}.png"
+    # Target Output (Custom Format)
+    # Requested: 1044_partition1_3_edit.png
+    # Logic: {image_id}_{partition}_{remainder}.png
+    
+    new_filename_stem = f"{image_id}_{partition}_{remainder}"
+    target_key = f"{OUTPUT_BASE}{difficulty}/{gender}/{new_filename_stem}.png"
     
     # 2. Check if exists (Resume)
     if await uploader.check_exists(target_key):
