@@ -76,17 +76,30 @@ async def process_prompt(generator, uploader, s3_key, info, semaphore):
     image_id = info["image_id"]
     stem = info["stem"]
     
-    # 1. Define Paths
-    # Source Image
+    # Mirroring Input Path Structure
+    # Input Key: dataset/edit_prompts/easy/edit_female/partition_0/1_0.txt
+    # We want:   edited_images/easy/edit_female/partition_0/1_0.png
+    
+    # 1. Get relative path from the prefix
+    # key is full s3 key. EDIT_PROMPTS_PREFIX is "dataset/edit_prompts/"
+    if s3_key.startswith(EDIT_PROMPTS_PREFIX):
+        # relative: easy/edit_female/partition_0/1_0.txt
+        relative_path_txt = s3_key[len(EDIT_PROMPTS_PREFIX):]
+        # remove extension .txt -> .png
+        relative_path_png = os.path.splitext(relative_path_txt)[0] + ".png"
+        
+        # Construct Target
+        target_key = f"{OUTPUT_BASE}{relative_path_png}"
+    else:
+        # Fallback if something is weird (shouldn't happen given parse logic)
+        target_key = f"{OUTPUT_BASE}{difficulty}/{gender}/{stem}.png"
+    
+    # 1. Define Paths (Source Image)
     if gender == "female":
         source_img_key = f"{SOURCE_IMAGES_BASE_FEMALE}{image_id}.png"
     else:
         source_img_key = f"{SOURCE_IMAGES_BASE_MALE}{image_id}.png"
-        
-    # Target Output
-    # edited_images/{difficulty}/{gender}/{stem}.png
-    target_key = f"{OUTPUT_BASE}{difficulty}/{gender}/{stem}.png"
-    
+            
     # 2. Check if exists (Resume)
     if await uploader.check_exists(target_key):
         print(f"Skipping {target_key} (Already exists)")
