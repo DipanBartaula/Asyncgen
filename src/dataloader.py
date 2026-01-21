@@ -6,7 +6,7 @@ def get_dataloader(
     jsonl_paths,
     batch_size=4,
     resolution=1024,
-    num_workers=4,
+    num_workers=16,
     shuffle=True
 ):
     """
