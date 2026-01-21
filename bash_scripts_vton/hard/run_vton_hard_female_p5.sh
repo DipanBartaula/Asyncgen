@@ -1,0 +1,4 @@
+#!/bin/bash
+# VTON Script for hard female partition 5
+
+python vton_main.py --model 9b --difficulty hard --gender female --partition partition_5

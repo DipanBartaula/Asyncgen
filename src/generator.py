@@ -60,7 +60,7 @@ class ImageGenerator:
         self.pipe.to(self.device)
         print("✓ Model ready!")
         
-    def generate(self, prompt: str, height=1024, width=1024, steps=None, guidance=None, seed=None, image=None, strength=0.75) -> Image.Image:
+    def generate(self, prompt: str, height=1024, width=1024, steps=None, guidance=None, seed=None, image=None, cloth_image=None, strength=0.75) -> Image.Image:
         # Defaults based on model type if not provided
         if steps is None:
             steps = 4 if self.model_type in ["nvfp4", "4b"] else 4 # Assuming 9B is also distilled for 4 steps, or user can override
@@ -87,7 +87,14 @@ class ImageGenerator:
                      self.pipe = FluxImg2ImgPipeline.from_pipe(self.pipe)
 
             
-            submit_img_kwargs["image"] = image
+            # Handle Single Image (Editing) vs Double Image (VTON)
+            if cloth_image is not None:
+                # VTON Mode: Pass [Person, Cloth]
+                # print("VTON Mode: Passing [Person, Cloth]")
+                submit_img_kwargs["image"] = [image, cloth_image]
+            else:
+                # Standard Edit Mode
+                submit_img_kwargs["image"] = image
             
             # Flux2KleinPipeline (4b/9b) does not support 'strength'
             # NVFP4 (standard FluxPipeline converted to Img2Img) DOES support 'strength'
