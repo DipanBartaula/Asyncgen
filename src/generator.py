@@ -75,20 +75,16 @@ class ImageGenerator:
         submit_img_kwargs = {}
         if image is not None:
             # We need to switch to Img2Img pipeline for editing
+            from diffusers import FluxImg2ImgPipeline
+            
             # Check which pipeline type we're using
-            if self.model_type in ["4b", "9b"]:
-                from diffusers import Flux2KleinImg2ImgPipeline
-                
-                if not isinstance(self.pipe, Flux2KleinImg2ImgPipeline):
-                    # print("Converting pipeline to Flux2KleinImg2ImgPipeline...")
-                    self.pipe = Flux2KleinImg2ImgPipeline.from_pipe(self.pipe)
-            else:
-                # NVFP4 uses standard FluxImg2ImgPipeline
-                from diffusers import FluxImg2ImgPipeline
-                
-                if not isinstance(self.pipe, FluxImg2ImgPipeline):
-                    # print("Converting pipeline to FluxImg2ImgPipeline...")
-                    self.pipe = FluxImg2ImgPipeline.from_pipe(self.pipe)
+            # Flux2KleinPipeline usually converts to FluxImg2ImgPipeline or has its own.
+            # Since Flux2KleinImg2ImgPipeline doesn't seem to exist, we try the standard one.
+            
+            if not isinstance(self.pipe, FluxImg2ImgPipeline):
+                 # print("Converting pipeline to FluxImg2ImgPipeline...")
+                 self.pipe = FluxImg2ImgPipeline.from_pipe(self.pipe)
+
             
             submit_img_kwargs["image"] = image
             submit_img_kwargs["strength"] = strength
