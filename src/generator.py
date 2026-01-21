@@ -88,7 +88,11 @@ class ImageGenerator:
 
             
             submit_img_kwargs["image"] = image
-            submit_img_kwargs["strength"] = strength
+            
+            # Flux2KleinPipeline (4b/9b) does not support 'strength'
+            # NVFP4 (standard FluxPipeline converted to Img2Img) DOES support 'strength'
+            if self.model_type not in ["4b", "9b"]:
+                submit_img_kwargs["strength"] = strength
         
         image = self.pipe(
             prompt=prompt,
