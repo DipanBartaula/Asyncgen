@@ -91,7 +91,7 @@ async def download_worker(uploader, prompt_files, existing_outputs, queue, gener
     Producer: Downloads images and prompts, puts them in the queue.
     """
     print(f"Producer started. Processing {len(prompt_files)} files...")
-    random.shuffle(prompt_files) # Randomize order as requested
+    prompt_files.sort() # Ensure deterministic sequential order
     
     skipped = 0
     queued = 0
