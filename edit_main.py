@@ -84,6 +84,123 @@ def parse_s3_key_info(key):
         "stem": stem
     }
 
+import random
+
+async def download_worker(uploader, prompt_files, existing_outputs, queue, generator_model_type):
+    """
+    Producer: Downloads images and prompts, puts them in the queue.
+    """
+    print(f"Producer started. Processing {len(prompt_files)} files...")
+    random.shuffle(prompt_files) # Randomize order as requested
+    
+    skipped = 0
+    queued = 0
+    
+    for key in prompt_files:
+        info = parse_s3_key_info(key)
+        if not info: 
+            continue
+            
+        # Construct Target Key
+        part = info.get("partition", "unknown")
+        rem = info.get("remainder", "")
+        img_id = info["image_id"]
+        diff = info["difficulty"]
+        gen = info["gender"]
+        
+        new_filename_stem = f"{img_id}_{part}_{rem}"
+        target_key = f"{OUTPUT_BASE}{diff}/{gen}/{new_filename_stem}.png"
+        
+        # Resume Logic
+        if target_key in existing_outputs:
+            skipped += 1
+            continue
+            
+        # Check Gender/Source Path
+        if gen == "female":
+            source_img_key = f"{SOURCE_IMAGES_BASE_FEMALE}{img_id}.png"
+        else:
+            source_img_key = f"{SOURCE_IMAGES_BASE_MALE}{img_id}.png"
+            
+        stem = info["stem"]
+        print(f"[{stem}] Downloading inputs...")
+        
+        # Parallel Download of Image and Text
+        img_task = asyncio.create_task(uploader.download_image(source_img_key))
+        txt_task = asyncio.create_task(uploader.download_text(key))
+        
+        source_image, prompt_text = await asyncio.gather(img_task, txt_task)
+        
+        if source_image is None or not prompt_text:
+            print(f"[{stem}] SKIP: Missing input files.")
+            continue
+            
+        # Put into Queue (Blocks if full, creating backpressure)
+        # Item: (stem, prompt_text, source_image, target_key)
+        await queue.put((stem, prompt_text, source_image, target_key))
+        queued += 1
+        
+    print(f"Producer finished. Queued: {queued}, Skipped: {skipped}")
+    await queue.put(None) # Sentinel to signal end
+
+async def gpu_worker(generator, uploader, queue, semaphore):
+    """
+    Consumer: Takes ready data from queue, runs GPU generation, starts background upload.
+    """
+    print("GPU Worker started. Waiting for data...")
+    upload_tasks = set()
+    
+    while True:
+        item = await queue.get()
+        if item is None:
+            queue.task_done()
+            break
+            
+        stem, prompt_text, source_image, target_key = item
+        
+        # GPU Generation
+        print(f"[{stem}] Processing on GPU...")
+        try:
+            # We don't strictly need semaphore if only 1 consumer exists, 
+            # but good for safety if we scale consumer count.
+            async with semaphore: 
+                result_image = await asyncio.to_thread(
+                    generator.generate,
+                    prompt=prompt_text,
+                    image=source_image,
+                    strength=0.75,
+                    width=source_image.width, 
+                    height=source_image.height
+                )
+        except Exception as e:
+            print(f"[{stem}] GENERATION FAILED: {e}")
+            queue.task_done()
+            continue
+            
+        # Fire and Forget Upload (Background)
+        print(f"[{stem}] Generation done. Queuing upload...")
+        
+        # Define wrapper to handle upload and cleanup set
+        task = asyncio.create_task(upload_wrapper(uploader, result_image, target_key, stem))
+        upload_tasks.add(task)
+        task.add_done_callback(upload_tasks.discard)
+        
+        queue.task_done()
+        
+    # Wait for remaining uploads
+    if upload_tasks:
+        print(f"Waiting for {len(upload_tasks)} pending uploads...")
+        await asyncio.gather(*upload_tasks)
+        
+    print("GPU Worker finished.")
+
+async def upload_wrapper(uploader, image, key, stem):
+    try:
+        await uploader.upload_edited_image(image, key)
+        print(f"[{stem}] ✓ Upload Complete.")
+    except Exception as e:
+        print(f"[{stem}] x Upload Failed: {e}")
+
 async def main(model_type="9b", difficulty_target=None, partition_target=None, gender_target=None):
     print(f"Initializing Edit Pipeline with Model: {model_type}")
     print(f"Targeting Difficulty: {difficulty_target if difficulty_target else 'ALL'}")
@@ -97,12 +214,7 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
     # Init Uploader
     uploader = AsyncUploader()
     
-    # ---------------------------------------------------------
-    # OPTIMIZATION: SCAN EXISTING OUTPUTS FIRST (RESUME LOGIC)
-    # ---------------------------------------------------------
-    # We want to avoid calling uploader.check_exists() N times.
-    # Instead, we list the output directory once and filter locally.
-    
+    # 1. Scan Existing Outputs (Resume)
     existing_outputs = set()
     s3_client = boto3.client(
         "s3", 
@@ -111,183 +223,71 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY
     )
     
-    # Determine where to scan for outputs.
-    # Output structure: edited_images/{difficulty}/{gender}/
-    # If difficulty and gender are known, we scan that specific folder.
-    # If not, we scan the root edited_images/ recursively (could be slower but necessary).
-    
     output_scan_prefixes = []
-    
     if difficulty_target and gender_target:
-        # Specific scan: edited_images/easy/female/
         output_scan_prefixes.append(f"{OUTPUT_BASE}{difficulty_target}/{gender_target}/")
-        
     elif difficulty_target:
-        # Scan all genders for this difficulty: edited_images/easy/
         output_scan_prefixes.append(f"{OUTPUT_BASE}{difficulty_target}/")
-        
     elif gender_target:
-        # Scan all difficulties for this gender? Structure is diff/gender.
-        # We would have to scan: easy/gender/, medium/gender/, hard/gender/
         for diff in ["easy", "medium", "hard"]:
              output_scan_prefixes.append(f"{OUTPUT_BASE}{diff}/{gender_target}/")
     else:
-        # Scan everything
         output_scan_prefixes.append(OUTPUT_BASE)
         
-    print(f"Checking existing outputs for resume capability in: {output_scan_prefixes}")
-    
+    print(f"Checking existing outputs for resume capability...")
     output_paginator = s3_client.get_paginator("list_objects_v2")
-    
     for prefix in output_scan_prefixes:
         for page in output_paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=prefix):
             if "Contents" in page:
                 for obj in page["Contents"]:
-                    # Key: edited_images/easy/female/1044_partition_0_3_edit.png
-                    # We store the full key in the set for exact matching
                     existing_outputs.add(obj["Key"])
-                    
     print(f"Found {len(existing_outputs)} existing edited images.")
 
-    # ---------------------------------------------------------
-    # SCAN PROMPTS
-    # ---------------------------------------------------------
-    
-    # List Prompts
+    # 2. Scan Inputs
     scan_prefix = EDIT_PROMPTS_PREFIX
     if difficulty_target:
         scan_prefix = f"{EDIT_PROMPTS_PREFIX}{difficulty_target}/"
         if gender_target:
-             # Map 'female' -> 'edit_female', 'male' -> 'edit_male'
              gender_dir = f"edit_{gender_target}"
              scan_prefix = f"{scan_prefix}{gender_dir}/"
-             
-             # Optimization: If partition is specified, drill down into it
              if partition_target:
                  scan_prefix = f"{scan_prefix}{partition_target}/"
     
-    print(f"Scanning prompts in {S3_BUCKET_NAME}/{scan_prefix}...")
-    
-    tasks = []
-    
-    # We use the same s3_client for paginator
+    print(f"Scanning prompts inputs in {scan_prefix}...")
+    prompt_files = []
     paginator = s3_client.get_paginator("list_objects_v2")
     
-    # Limit concurrency
-    semaphore = asyncio.Semaphore(1) 
-    
-    prompt_files = []
     for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=scan_prefix):
         if "Contents" in page:
             for obj in page["Contents"]:
                 key = obj["Key"]
                 if key.endswith(".txt"):
-                    # Check Partition Filter
-                    if partition_target:
-                        parts = key.split('/')
-                        if partition_target in parts:
-                             pass # Match
-                        else:
-                             continue
-                    
-                    if gender_target:
-                         if f"edit_{gender_target}" not in key:
-                             continue
-
+                    # Double check filters locally just in case
+                    if partition_target and partition_target not in key: continue
+                    if gender_target and f"edit_{gender_target}" not in key: continue
                     prompt_files.append(key)
                     
-    print(f"Found {len(prompt_files)} matching prompt files.")
+    print(f"Found {len(prompt_files)} matching input files.")
     
-    total_tasks = 0
-    skipped_count = 0
+    # 3. Queue & Tasks
+    # Maxsize limits memory usage. 
+    # e.g., keep 10 images ready in RAM.
+    queue = asyncio.Queue(maxsize=10) 
     
-    for key in prompt_files:
-        info = parse_s3_key_info(key)
-        if info:
-            if difficulty_target and info["difficulty"] != difficulty_target:
-                continue
-            if gender_target and info["gender"] != gender_target:
-                continue
-            
-            # Construct Target Key
-            # Logic: {image_id}_{partition}_{remainder}.png
-            part = info.get("partition", "unknown")
-            rem = info.get("remainder", "")
-            img_id = info["image_id"]
-            diff = info["difficulty"]
-            gen = info["gender"]
-            
-            new_filename_stem = f"{img_id}_{part}_{rem}"
-            target_key = f"{OUTPUT_BASE}{diff}/{gen}/{new_filename_stem}.png"
-            
-            # CHECK IF EXISTS (Resume Logic)
-            if target_key in existing_outputs:
-                skipped_count += 1
-                continue
-                
-            tasks.append(process_prompt(generator, uploader, key, target_key, info, semaphore))
-            total_tasks += 1
-            
-    print(f"Queued {total_tasks} tasks. Skipped {skipped_count} already processed.")
-    print("Starting execution...")
+    # Limit Concurrency
+    semaphore = asyncio.Semaphore(1)
     
-    if tasks:
-        await asyncio.gather(*tasks)
+    # Start Producer
+    producer_task = asyncio.create_task(download_worker(uploader, prompt_files, existing_outputs, queue, model_type))
     
-    print("All edit tasks completed.")
-
-async def process_prompt(generator, uploader, s3_key, target_key, info, semaphore):
-    # s3_key: Source Prompt S3 Key
-    # target_key: Destination Image S3 Key
+    # Start Consumer (GPU)
+    consumer_task = asyncio.create_task(gpu_worker(generator, uploader, queue, semaphore))
     
-    stem = info["stem"]
-    image_id = info["image_id"]
-    gender = info["gender"]
+    print("Pipeline started. Press Ctrl+C to stop.")
     
-    # 1. Define Source Image Path
-    if gender == "female":
-        source_img_key = f"{SOURCE_IMAGES_BASE_FEMALE}{image_id}.png"
-    else:
-        source_img_key = f"{SOURCE_IMAGES_BASE_MALE}{image_id}.png"
-        
-    # Note: We already checked existence in the main loop, so we skip check_exists here
-    # to save time, unless paranoid about race conditions (unlikely in this batch job).
-
-    # 2. Download Inputs (IO Bound)
-    print(f"[{stem}] Downloading source image: {source_img_key}")
-    source_image = await uploader.download_image(source_img_key)
-    if source_image is None:
-        print(f"[{stem}] SKIPPING: Source image not found ({source_img_key})")
-        return
-        
-    print(f"[{stem}] Downloading prompt text: {s3_key}")
-    prompt_text = await uploader.download_text(s3_key)
-    if not prompt_text:
-            print(f"[{stem}] SKIPPING: Prompt text is empty or missing")
-            return
+    await asyncio.gather(producer_task, consumer_task)
     
-    # 3. Generate (GPU Bound)
-    print(f"[{stem}] Waiting for GPU slot...")
-    async with semaphore:
-        print(f"[{stem}] GPU SLOT ACQUIRED. Starting generation...")
-        try:
-            result_image = await asyncio.to_thread(
-                generator.generate,
-                prompt=prompt_text,
-                image=source_image,
-                strength=0.75, 
-                width=source_image.width, 
-                height=source_image.height
-            )
-            print(f"[{stem}] Generation COMPLETED successfully.")
-        except Exception as e:
-            print(f"[{stem}] FAILURE during generation: {e}")
-            return
-
-    # 4. Upload (IO Bound)
-    print(f"[{stem}] Uploading result to: {target_key}")
-    await uploader.upload_edited_image(result_image, target_key)
-    print(f"[{stem}] DONE.")
+    print("All tasks finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
