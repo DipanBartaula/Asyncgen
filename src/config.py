@@ -9,8 +9,10 @@ load_dotenv()
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "p1-to-ep1")
 S3_REGION = os.getenv("S3_REGION", "ap-south-1")
 S3_PREFIX = os.getenv("S3_PREFIX", "generated_images")
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+# AWS Credentials
+# TODO: Replace with your actual credentials if not using environment variables
+AWS_ACCESS_KEY_ID = "YOUR_AWS_ACCESS_KEY"
+AWS_SECRET_ACCESS_KEY = "YOUR_AWS_SECRET_KEY"
 
 # Run Configuration
 # OUTPUT_BASE_DIR = Path("output")
