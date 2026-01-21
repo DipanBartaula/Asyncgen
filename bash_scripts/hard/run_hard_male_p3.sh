@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to run hard male partition 3
+# Script to run hard male partition 3 using model 9b
 
 # Ensure we are in the project root (optional check or cd)
 # cd /path/to/project

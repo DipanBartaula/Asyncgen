@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to run medium female partition 0
+# Script to run medium female partition 0 using model 9b
 
 # Ensure we are in the project root (optional check or cd)
 # cd /path/to/project

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to run medium male partition 2
+# Script to run medium male partition 2 using model 9b
 
 # Ensure we are in the project root (optional check or cd)
 # cd /path/to/project
