@@ -6,13 +6,21 @@ load_dotenv()
 
 # S3 Configuration
 # WARNING: Hardcoded credentials. In production, use environment variables or IAM roles.
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "p1-to-ep1")
-S3_REGION = os.getenv("S3_REGION", "ap-south-1")
-S3_PREFIX = os.getenv("S3_PREFIX", "generated_images")
 # AWS Credentials
-# TODO: Replace with your actual credentials if not using environment variables
-AWS_ACCESS_KEY_ID = "YOUR_AWS_ACCESS_KEY"
-AWS_SECRET_ACCESS_KEY = "YOUR_AWS_SECRET_KEY"
+# You can hardcode them here OR use environment variables.
+_ACCESS_KEY = "YOUR_AWS_ACCESS_KEY"
+_SECRET_KEY = "YOUR_AWS_SECRET_KEY"
+
+# If user hasn't replaced the placeholder, try loading from environment
+if _ACCESS_KEY == "YOUR_AWS_ACCESS_KEY":
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+else:
+    AWS_ACCESS_KEY_ID = _ACCESS_KEY
+
+if _SECRET_KEY == "YOUR_AWS_SECRET_KEY":
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+else:
+    AWS_SECRET_ACCESS_KEY = _SECRET_KEY
 
 # Run Configuration
 # OUTPUT_BASE_DIR = Path("output")
