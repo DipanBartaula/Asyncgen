@@ -6,6 +6,7 @@ load_dotenv()
 
 # S3 Configuration
 # WARNING: Hardcoded credentials. In production, use environment variables or IAM roles.
+
 # AWS Credentials
 # You can hardcode them here OR use environment variables.
 _ACCESS_KEY = "YOUR_AWS_ACCESS_KEY"
@@ -22,9 +23,9 @@ if _SECRET_KEY == "YOUR_AWS_SECRET_KEY":
 else:
     AWS_SECRET_ACCESS_KEY = _SECRET_KEY
 
-# Run Configuration
-# OUTPUT_BASE_DIR = Path("output")
-# OUTPUT_BASE_DIR.mkdir(exist_ok=True)
+# Bucket Configuration
+S3_REGION = os.getenv("S3_REGION", "auto")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "vton-people") # Default to vton-people based on context
 
 # Hugging Face Auth
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
