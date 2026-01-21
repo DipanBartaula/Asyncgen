@@ -161,6 +161,10 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
              # Map 'female' -> 'edit_female', 'male' -> 'edit_male'
              gender_dir = f"edit_{gender_target}"
              scan_prefix = f"{scan_prefix}{gender_dir}/"
+             
+             # Optimization: If partition is specified, drill down into it
+             if partition_target:
+                 scan_prefix = f"{scan_prefix}{partition_target}/"
     
     print(f"Scanning prompts in {S3_BUCKET_NAME}/{scan_prefix}...")
     
