@@ -175,7 +175,7 @@ dresscode/
 
 ---
 
-## 3. DeepFashion Dataset (20% Subset)
+## 3. DeepFashion Dataset (Test Set Only)
 
 **S3 Path**: `s3://p1-ep1/baselines/deepfashion/`
 
@@ -183,8 +183,8 @@ dresscode/
 
 ```
 deepfashion/
-├── images/                       # Fashion product images (20% subset)
-│   ├── train/
+├── test/                         # Test set images only
+│   ├── images/
 │   │   ├── Apparel/
 │   │   │   ├── Boys/
 │   │   │   │   ├── Images/
@@ -242,11 +242,10 @@ deepfashion/
 
 ```
 
-### Dataset Statistics (20% Subset)
+### Dataset Statistics (Test Set)
 - **Original Dataset**: ~800,000 images
-- **20% Subset**: ~160,000 images (randomly sampled)
+- **Test Set**: Contains test split only
 - **Categories**: Multiple (Apparel, Accessories, Footwear, etc.)
-- **Sampling Method**: Random with seed=42 (reproducible)
 - **Format**: JPG (images), CSV/JSON (metadata)
 
 ### Metadata Fields (styles.csv)
@@ -313,9 +312,9 @@ s3://p1-ep1/
     │   ├── lower_body/
     │   └── dataset_info.json
     │
-    └── deepfashion/              # DeepFashion (20% subset)
-        ├── images/ or train/
-        ├── styles.csv
+    └── deepfashion/              # DeepFashion (test set only)
+        ├── test/
+        ├── styles.csv (if available)
         └── dataset_info.json
 
 ```
@@ -413,8 +412,8 @@ image_path = f"images/train/Apparel/Women/Images/Images/{image_id}.jpg"
 ### Storage Estimates
 - **VITON-HD**: ~15-20 GB
 - **DressCode (filtered)**: ~10-15 GB
-- **DeepFashion (20% subset)**: ~5-8 GB
-- **Total**: ~30-43 GB
+- **DeepFashion (test set)**: ~2-5 GB
+- **Total**: ~27-40 GB
 
 ---
 

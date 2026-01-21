@@ -31,10 +31,10 @@ Downloads DressCode dataset (filtered version).
 - **S3 Path**: `s3://p1-ep1/baselines/dresscode/`
 
 ### 4. `download_deepfashion.py`
-Downloads a 20% subset of DeepFashion dataset.
-- **Dataset**: DeepFashion (20% random subset)
+Downloads the test set only from DeepFashion dataset.
+- **Dataset**: DeepFashion (Test set only)
 - **Source**: Kaggle alternative (official requires institutional access)
-- **Subset**: 20% randomly sampled (seed=42 for reproducibility)
+- **Split**: Test set only
 - **S3 Path**: `s3://p1-ep1/baselines/deepfashion/`
 
 ## Prerequisites
@@ -68,7 +68,7 @@ python download_vtonhd.py
 # Download DressCode
 python download_dresscode.py
 
-# Download DeepFashion (20% subset)
+# Download DeepFashion (test set only)
 python download_deepfashion.py
 ```
 

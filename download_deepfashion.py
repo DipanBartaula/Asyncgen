@@ -1,11 +1,11 @@
 """
-Download DeepFashion Dataset (20% Subset) and Upload to S3
+Download DeepFashion Dataset (Test Set Only) and Upload to S3
 
 Dataset: DeepFashion - Large-scale Fashion Dataset
 Source: http://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html
 Institution: Multimedia Laboratory, The Chinese University of Hong Kong
 
-Note: This script downloads a 20% subset of the DeepFashion dataset.
+Note: This script downloads ONLY the test set of the DeepFashion dataset.
 Full dataset requires password from official source after signing agreement.
 """
 
@@ -14,7 +14,6 @@ import boto3
 import requests
 import zipfile
 import json
-import random
 from pathlib import Path
 from tqdm import tqdm
 from src.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_REGION
@@ -25,7 +24,6 @@ DATASET_NAME = "deepfashion"
 KAGGLE_DATASET = "paramaggarwal/fashion-product-images-dataset"  # Alternative smaller dataset
 LOCAL_DOWNLOAD_DIR = Path("./datasets_temp/deepfashion")
 S3_BASE_PATH = "baselines/deepfashion"
-SUBSET_PERCENTAGE = 0.20  # 20% subset
 
 def download_with_kaggle(dataset_name, destination_dir):
     """Download dataset from Kaggle using kaggle API"""
@@ -81,61 +79,97 @@ def download_file(url, destination):
         print(f"Error downloading: {e}")
         return False
 
-def create_subset(source_dir, output_dir, percentage=0.20):
+def extract_test_set(source_dir, output_dir):
     """
-    Create a random subset of the dataset
+    Extract only the test set from the dataset
     
     Args:
         source_dir: Source directory with full dataset
-        output_dir: Output directory for subset
-        percentage: Percentage of data to include (0.20 = 20%)
+        output_dir: Output directory for test set
     """
-    print(f"\nCreating {percentage*100}% subset of dataset...")
+    print(f"\nExtracting test set from dataset...")
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Find all image files
-    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp'}
-    all_images = []
+    # Look for test directory
+    test_dirs = list(source_dir.rglob('test'))
     
-    for ext in image_extensions:
-        all_images.extend(source_dir.rglob(f'*{ext}'))
-        all_images.extend(source_dir.rglob(f'*{ext.upper()}'))
-    
-    print(f"Found {len(all_images)} total images")
-    
-    # Random sample
-    random.seed(42)  # For reproducibility
-    subset_size = int(len(all_images) * percentage)
-    subset_images = random.sample(all_images, subset_size)
-    
-    print(f"Selected {subset_size} images for subset")
-    
-    # Copy subset maintaining directory structure
-    copied_files = 0
-    for img_path in tqdm(subset_images, desc="Copying subset"):
-        relative_path = img_path.relative_to(source_dir)
-        dest_path = output_dir / relative_path
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
+    if test_dirs:
+        print(f"Found {len(test_dirs)} test directories")
         
-        if not dest_path.exists():
-            import shutil
-            shutil.copy2(img_path, dest_path)
-            copied_files += 1
-    
-    print(f"✓ Created subset with {copied_files} images")
-    
-    # Also copy any metadata files (CSV, JSON, TXT)
-    metadata_extensions = {'.csv', '.json', '.txt', '.xml'}
-    for ext in metadata_extensions:
-        for meta_file in source_dir.rglob(f'*{ext}'):
-            relative_path = meta_file.relative_to(source_dir)
+        # Copy all test directories
+        import shutil
+        copied_files = 0
+        
+        for test_dir in test_dirs:
+            if test_dir.is_dir():
+                # Get relative path from source
+                try:
+                    relative_path = test_dir.relative_to(source_dir)
+                except ValueError:
+                    # If test_dir is not relative to source_dir, use just 'test'
+                    relative_path = Path('test')
+                
+                dest_test_dir = output_dir / relative_path
+                
+                # Copy entire test directory
+                if test_dir.exists() and not dest_test_dir.exists():
+                    print(f"Copying {test_dir} -> {dest_test_dir}")
+                    shutil.copytree(test_dir, dest_test_dir)
+                    
+                    # Count files
+                    for file_path in dest_test_dir.rglob('*'):
+                        if file_path.is_file():
+                            copied_files += 1
+    else:
+        # If no explicit test directory, look for test images in the structure
+        print("No explicit test directory found. Looking for test images...")
+        
+        # Find all image files
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp'}
+        all_images = []
+        
+        for ext in image_extensions:
+            all_images.extend(source_dir.rglob(f'*{ext}'))
+            all_images.extend(source_dir.rglob(f'*{ext.upper()}'))
+        
+        # Filter for test images (images with 'test' in path)
+        test_images = [img for img in all_images if 'test' in str(img).lower()]
+        
+        if not test_images:
+            print("⚠ No test images found. Copying all images as test set...")
+            test_images = all_images
+        
+        print(f"Found {len(test_images)} test images")
+        
+        # Copy test images maintaining directory structure
+        import shutil
+        copied_files = 0
+        
+        for img_path in tqdm(test_images, desc="Copying test images"):
+            relative_path = img_path.relative_to(source_dir)
             dest_path = output_dir / relative_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             
             if not dest_path.exists():
-                import shutil
-                shutil.copy2(meta_file, dest_path)
+                shutil.copy2(img_path, dest_path)
+                copied_files += 1
+    
+    print(f"✓ Extracted test set with {copied_files} files")
+    
+    # Also copy any metadata files (CSV, JSON, TXT) that might be in test directories
+    metadata_extensions = {'.csv', '.json', '.txt', '.xml'}
+    for ext in metadata_extensions:
+        for meta_file in source_dir.rglob(f'*{ext}'):
+            # Only copy if it's in a test directory or has 'test' in the name
+            if 'test' in str(meta_file).lower():
+                relative_path = meta_file.relative_to(source_dir)
+                dest_path = output_dir / relative_path
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                if not dest_path.exists():
+                    import shutil
+                    shutil.copy2(meta_file, dest_path)
     
     return output_dir
 
@@ -167,14 +201,13 @@ def upload_to_s3(local_path, s3_path):
     
     print(f"✓ Upload complete!")
 
-def create_dataset_info(output_dir, subset_percentage):
+def create_dataset_info(output_dir):
     """Create a JSON file with dataset information"""
     info = {
         "dataset": "DeepFashion",
         "source": "http://mmlab.ie.cuhk.edu.hk/projects/DeepFashion.html",
-        "subset_percentage": subset_percentage * 100,
-        "note": f"Random {subset_percentage*100}% subset of DeepFashion dataset",
-        "seed": 42,
+        "split": "test",
+        "note": "Test set only from DeepFashion dataset",
         "download_date": str(Path.ctime(output_dir)) if output_dir.exists() else "unknown"
     }
     
@@ -187,7 +220,7 @@ def create_dataset_info(output_dir, subset_percentage):
 def main():
     """Main download and upload pipeline"""
     print("=" * 80)
-    print(f"DeepFashion Dataset Download (20% Subset) and Upload to S3")
+    print(f"DeepFashion Dataset Download (Test Set Only) and Upload to S3")
     print("=" * 80)
     
     # Create local directory
@@ -219,28 +252,28 @@ def main():
     
     print(f"✓ Found {len(image_files)} images in dataset")
     
-    # Create subset
-    print(f"\n[2/5] Creating {SUBSET_PERCENTAGE*100}% subset...")
-    subset_dir = LOCAL_DOWNLOAD_DIR / "subset_20pct"
-    create_subset(download_dir, subset_dir, SUBSET_PERCENTAGE)
+    # Extract test set
+    print(f"\n[2/5] Extracting test set...")
+    test_dir = LOCAL_DOWNLOAD_DIR / "test_only"
+    extract_test_set(download_dir, test_dir)
     
     # Create dataset info
     print("\n[3/5] Creating dataset info...")
-    create_dataset_info(subset_dir, SUBSET_PERCENTAGE)
+    create_dataset_info(test_dir)
     
-    # Verify subset
-    print("\n[4/5] Verifying subset...")
-    subset_images = list(subset_dir.rglob('*.jpg')) + list(subset_dir.rglob('*.png'))
-    print(f"✓ Subset contains {len(subset_images)} images")
+    # Verify test set
+    print("\n[4/5] Verifying test set...")
+    test_images = list(test_dir.rglob('*.jpg')) + list(test_dir.rglob('*.png'))
+    print(f"✓ Test set contains {len(test_images)} images")
     
     # Upload to S3
     print("\n[5/5] Uploading to S3...")
-    upload_to_s3(subset_dir, S3_BASE_PATH)
+    upload_to_s3(test_dir, S3_BASE_PATH)
     
     print("\n" + "=" * 80)
-    print("✓ DeepFashion dataset (20% subset) successfully downloaded and uploaded to S3!")
+    print("✓ DeepFashion dataset (test set only) successfully downloaded and uploaded to S3!")
     print(f"  S3 Location: s3://{S3_BUCKET_NAME}/{S3_BASE_PATH}")
-    print(f"  Subset size: {len(subset_images)} images ({SUBSET_PERCENTAGE*100}% of original)")
+    print(f"  Test set size: {len(test_images)} images")
     print("=" * 80)
     
     # Cleanup option
