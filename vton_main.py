@@ -55,8 +55,8 @@ def parse_s3_key_info(key):
 
 async def get_clothes_list(s3_client, gender):
     # List all clothes for the gender
-    # Path: dataset/clothes/{gender}/
-    prefix = f"{CLOTHES_BASE}{gender}/"
+    # Structure: dataset/clothes/{gender}/images/{filename}.png
+    prefix = f"{CLOTHES_BASE}{gender}/images/"
     clothes = []
     print(f"Listing clothes from {prefix}...")
     
@@ -72,7 +72,7 @@ async def get_clothes_list(s3_client, gender):
 
 async def download_worker(uploader, person_files, clothes_list, queue):
     """
-    Producer: Downloads person + random cloth -> Queue
+    Producer: Downloads person + random cloth + cloth prompt -> Queue
     """
     print(f"Producer started. Processing {len(person_files)} person images...")
     
@@ -87,6 +87,11 @@ async def download_worker(uploader, person_files, clothes_list, queue):
         # Pick Random Cloth
         cloth_key = random.choice(clothes_list)
         
+        # Construct Cloth Prompt Key
+        # dataset/clothes/female/images/1.png -> dataset/clothes/female/prompts/1.txt
+        prompt_key = cloth_key.replace("/images/", "/prompts/")
+        prompt_key = os.path.splitext(prompt_key)[0] + ".txt"
+        
         info = parse_s3_key_info(person_key)
         stem = info["stem"]
         diff = info["difficulty"]
@@ -94,17 +99,22 @@ async def download_worker(uploader, person_files, clothes_list, queue):
         
         print(f"[{stem}] Downloading Person: {person_key} + Cloth: {cloth_key}")
         
-        # Parallel Download
+        # Parallel Download: Person Img, Cloth Img, Cloth Prompt
         p_task = asyncio.create_task(uploader.download_image(person_key))
         c_task = asyncio.create_task(uploader.download_image(cloth_key))
+        txt_task = asyncio.create_task(uploader.download_text(prompt_key))
         
-        person_img, cloth_img = await asyncio.gather(p_task, c_task)
+        person_img, cloth_img, prompt_text = await asyncio.gather(p_task, c_task, txt_task)
         
         if person_img is None or cloth_img is None:
             print(f"[{stem}] SKIP: Input missing.")
             continue
             
-        await queue.put((info, person_img, cloth_img, person_key, cloth_key))
+        if not prompt_text:
+            print(f"[{stem}] Warning: Cloth prompt missing ({prompt_key}). Using default.")
+            prompt_text = VTON_PROMPT
+            
+        await queue.put((info, person_img, cloth_img, prompt_text, person_key, cloth_key))
         
     await queue.put(None)
 
@@ -121,22 +131,22 @@ async def gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer):
             queue.task_done()
             break
             
-        info, person_img, cloth_img, person_key_s3, cloth_key_s3 = item
+        info, person_img, cloth_img, prompt_text, person_key_s3, cloth_key_s3 = item
         stem = info["stem"]
         diff = info["difficulty"]
         gen = info["gender"]
         
-        print(f"[{stem}] Generating VTON...")
+        print(f"[{stem}] Generating VTON with prompt: {prompt_text[:30]}...")
         try:
             async with semaphore:
                 result_image = await asyncio.to_thread(
                     generator.generate,
-                    prompt=VTON_PROMPT,
+                    prompt=prompt_text,     # Uses specific cloth prompt
                     image=person_img,       # Person
                     cloth_image=cloth_img,  # Cloth (passed as 2nd arg to pipeline)
                     width=person_img.width,
                     height=person_img.height,
-                    steps=20 # Maybe higher for VTON? Assuming default or 20
+                    steps=20 
                 )
         except Exception as e:
             print(f"[{stem}] Generation FAILED: {e}")
