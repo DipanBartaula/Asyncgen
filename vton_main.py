@@ -11,7 +11,8 @@ from src.config import S3_BUCKET_NAME, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_
 
 # Constants
 EDITED_IMAGES_BASE = "edited_images/"
-CLOTHES_BASE = "dataset/clothes/"
+CLOTHES_BUCKET_NAME = "vton-cloth"
+CLOTHES_BASE = "" 
 OUTPUT_ULTIMATE_BASE = "dataset_ultimate/"
 
 # Prompt for VTON
@@ -55,13 +56,13 @@ def parse_s3_key_info(key):
 
 async def get_clothes_list(s3_client, gender):
     # List all clothes for the gender
-    # Structure: dataset/clothes/{gender}/images/{filename}.png
+    # Structure: {gender}/images/{filename}.png (inside vton-cloth bucket)
     prefix = f"{CLOTHES_BASE}{gender}/images/"
     clothes = []
-    print(f"Listing clothes from {prefix}...")
+    print(f"Listing clothes from {prefix} in bucket {CLOTHES_BUCKET_NAME}...")
     
     paginator = s3_client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=prefix):
+    for page in paginator.paginate(Bucket=CLOTHES_BUCKET_NAME, Prefix=prefix):
         if "Contents" in page:
             for obj in page["Contents"]:
                 key = obj["Key"]
@@ -100,7 +101,7 @@ async def download_worker(uploader, person_files, clothes_list, queue, completed
         cloth_key = random.choice(clothes_list)
         
         # Construct Cloth Prompt Key
-        # dataset/clothes/female/images/1.png -> dataset/clothes/female/prompts/1.txt
+        # female/images/1.png -> female/prompts/1.txt
         prompt_key = cloth_key.replace("/images/", "/prompts/")
         prompt_key = os.path.splitext(prompt_key)[0] + ".txt"
         
@@ -110,9 +111,9 @@ async def download_worker(uploader, person_files, clothes_list, queue, completed
         print(f"[{stem}] Downloading Person: {person_key} + Cloth: {cloth_key}")
         
         # Parallel Download: Person Img, Cloth Img, Cloth Prompt
-        p_task = asyncio.create_task(uploader.download_image(person_key))
-        c_task = asyncio.create_task(uploader.download_image(cloth_key))
-        txt_task = asyncio.create_task(uploader.download_text(prompt_key))
+        p_task = asyncio.create_task(uploader.download_image(person_key)) # From Main Bucket
+        c_task = asyncio.create_task(uploader.download_image(cloth_key, bucket_name=CLOTHES_BUCKET_NAME)) # From Cloth Bucket
+        txt_task = asyncio.create_task(uploader.download_text(prompt_key, bucket_name=CLOTHES_BUCKET_NAME)) # From Cloth Bucket
         
         person_img, cloth_img, prompt_text = await asyncio.gather(p_task, c_task, txt_task)
         

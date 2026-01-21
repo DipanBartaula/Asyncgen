@@ -40,43 +40,46 @@ class AsyncUploader:
         except Exception as e:
             print(f"❌ Error uploading {gender}/{prompt_number}: {e}")
 
-    async def download_image(self, key: str) -> Image.Image:
+    async def download_image(self, key: str, bucket_name: str = None) -> Image.Image:
         """
         Downloads an image from S3 and returns a PIL Image object.
         """
+        target_bucket = bucket_name or S3_BUCKET_NAME
         try:
             async with self.session.client("s3", region_name=S3_REGION) as s3:
-                response = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+                response = await s3.get_object(Bucket=target_bucket, Key=key)
                 image_data = await response['Body'].read()
                 return Image.open(BytesIO(image_data)).convert("RGB")
         except Exception as e:
-            print(f"Error downloading image {key}: {e}")
+            print(f"Error downloading image {key} from {target_bucket}: {e}")
             return None
 
-    async def download_text(self, key: str) -> str:
+    async def download_text(self, key: str, bucket_name: str = None) -> str:
         """
         Downloads a text file from S3 and returns its content string.
         """
+        target_bucket = bucket_name or S3_BUCKET_NAME
         try:
             async with self.session.client("s3", region_name=S3_REGION) as s3:
-                response = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+                response = await s3.get_object(Bucket=target_bucket, Key=key)
                 text_data = await response['Body'].read()
                 return text_data.decode('utf-8')
         except Exception as e:
-            print(f"Error downloading text {key}: {e}")
+            print(f"Error downloading text {key} from {target_bucket}: {e}")
             return None
 
-    async def upload_edited_image(self, image: Image.Image, key: str):
+    async def upload_edited_image(self, image: Image.Image, key: str, bucket_name: str = None):
         """
         Uploads the edited image to the specified S3 key.
         """
-        # print(f"Uploading edited image to {key}...")
+        target_bucket = bucket_name or S3_BUCKET_NAME
+        # print(f"Uploading edited image to {key} in {target_bucket}...")
         try:
             async with self.session.client("s3", region_name=S3_REGION) as s3:
                 img_buffer = BytesIO()
                 image.save(img_buffer, format="PNG")
                 img_buffer.seek(0)
-                await s3.upload_fileobj(img_buffer, S3_BUCKET_NAME, key)
+                await s3.upload_fileobj(img_buffer, target_bucket, key)
                 print(f"✓ Uploaded: {key}")
         except Exception as e:
             print(f"❌ Error uploading edited image {key}: {e}")
