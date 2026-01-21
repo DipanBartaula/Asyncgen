@@ -291,7 +291,7 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
     semaphore = asyncio.Semaphore(1)  # Keep 1 GPU worker to avoid OOM
     
     # Split person_files into chunks for multiple download workers
-    num_download_workers = 3
+    num_download_workers = 4
     chunk_size = len(person_files) // num_download_workers
     chunks = [person_files[i:i + chunk_size] for i in range(0, len(person_files), chunk_size)]
     
