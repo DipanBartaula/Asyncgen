@@ -4,7 +4,7 @@ import argparse
 import boto3
 from src.generator import ImageGenerator
 from src.s3_uploader import AsyncUploader
-from src.config import S3_BUCKET_NAME, S3_REGION
+from src.config import S3_BUCKET_NAME, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
 # Constants
 EDIT_PROMPTS_PREFIX = "dataset/edit_prompts/"
@@ -107,8 +107,8 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
     s3_client = boto3.client(
         "s3", 
         region_name=S3_REGION,
-        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY")
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
     )
     
     # Determine where to scan for outputs.
