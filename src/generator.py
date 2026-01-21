@@ -75,19 +75,16 @@ class ImageGenerator:
         submit_img_kwargs = {}
         if image is not None:
             # We need to switch to Img2Img pipeline for editing
-            from diffusers import AutoPipelineForImage2Image
-            
-            # Check if current pipeline is capable of Image2Image or has already been converted.
-            # We use AutoPipeline to find the best fit for these specific components (Flux2Klein).
-            
-            # Note: We can't easily check isinstance against "AutoPipeline", so we check if it has the 'image' argument capability
-            # or just blindly try to convert if we are not sure.
-            # The safest is to use AutoPipelineForImage2Image.from_pipe(self.pipe) and it should be efficient (no reload).
-            
-            try:
-                 self.pipe = AutoPipelineForImage2Image.from_pipe(self.pipe)
-            except Exception as e:
-                 print(f"Warning: AutoPipeline conversion failed: {e}. Trying to proceed with existing pipe...")
+            # Check model type to decide on conversion
+            if self.model_type in ["4b", "9b"]:
+                # Flux2KleinPipeline supports 'image' argument natively (Unified Pipeline)
+                # No conversion needed.
+                pass
+            else:
+                # NVFP4 uses standard FluxPipeline which usually needs explicit conversion to Img2Img
+                from diffusers import FluxImg2ImgPipeline
+                if not isinstance(self.pipe, FluxImg2ImgPipeline):
+                     self.pipe = FluxImg2ImgPipeline.from_pipe(self.pipe)
 
             
             submit_img_kwargs["image"] = image
