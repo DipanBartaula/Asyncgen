@@ -24,7 +24,7 @@ else:
     AWS_SECRET_ACCESS_KEY = _SECRET_KEY
 
 # Bucket Configuration
-S3_REGION = os.getenv("S3_REGION", "auto")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "p1-to-ep1") # Default to p1-to-ep1
 
 # Hugging Face Auth

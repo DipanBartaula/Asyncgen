@@ -100,30 +100,30 @@ async def download_worker(uploader, person_files, clothes_list, queue, completed
         # Pick Random Cloth
         cloth_key = random.choice(clothes_list)
         
-        # Construct Cloth Prompt Key
-        # female/images/1.png -> female/prompts/1.txt
-        prompt_key = cloth_key.replace("/images/", "/prompts/")
-        prompt_key = os.path.splitext(prompt_key)[0] + ".txt"
-        
         diff = info["difficulty"]
         gen = info["gender"]
         
-        print(f"[{stem}] Downloading Person: {person_key} + Cloth: {cloth_key}")
+        # Assign prompt directly based on difficulty
+        if diff == "easy":
+            prompt_text = "MAKE THIS PERSON WEAR THIS CLOTH."
+        elif diff == "medium":
+            prompt_text = "MAKE THIS PERSON WEAR THIS CLOTH."
+        elif diff == "hard":
+            prompt_text = "MAKE THIS PERSON WEAR THIS CLOTH. IF THE CLOTH IS FOR LOWER BODY, PRESERVE THE UPPER BODY CLOTHES AND VICE VERSA. IF THE CLOTH IS OUTER/FULL SLEEVED, WEAR IT ON TOP OF THE INNER/HALF SLEEVE CLOTHES."
+        else:
+            prompt_text = VTON_PROMPT
+            
+        print(f"[{stem}] Downloading Person: {person_key} + Cloth: {cloth_key} (Prompt: {prompt_text[:20]}...)")
         
-        # Parallel Download: Person Img, Cloth Img, Cloth Prompt
-        p_task = asyncio.create_task(uploader.download_image(person_key)) # From Main Bucket
-        c_task = asyncio.create_task(uploader.download_image(cloth_key, bucket_name=CLOTHES_BUCKET_NAME)) # From Cloth Bucket
-        txt_task = asyncio.create_task(uploader.download_text(prompt_key, bucket_name=CLOTHES_BUCKET_NAME)) # From Cloth Bucket
+        # Parallel Download: Person Img, Cloth Img Only
+        p_task = asyncio.create_task(uploader.download_image(person_key)) 
+        c_task = asyncio.create_task(uploader.download_image(cloth_key, bucket_name=CLOTHES_BUCKET_NAME))
         
-        person_img, cloth_img, prompt_text = await asyncio.gather(p_task, c_task, txt_task)
+        person_img, cloth_img = await asyncio.gather(p_task, c_task)
         
         if person_img is None or cloth_img is None:
             print(f"[{stem}] SKIP: Input missing.")
             continue
-            
-        if not prompt_text:
-            print(f"[{stem}] Warning: Cloth prompt missing ({prompt_key}). Using default.")
-            prompt_text = VTON_PROMPT
             
         await queue.put((info, person_img, cloth_img, prompt_text, person_key, cloth_key))
         
@@ -157,7 +157,7 @@ async def gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer):
                     cloth_image=cloth_img,  # Cloth (passed as 2nd arg to pipeline)
                     width=person_img.width,
                     height=person_img.height,
-                    steps=20 
+                    steps=4 
                 )
         except Exception as e:
             print(f"[{stem}] Generation FAILED: {e}")
