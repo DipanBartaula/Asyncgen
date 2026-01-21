@@ -166,16 +166,20 @@ async def gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer):
             
         # Uploads
         # Structure: dataset_ultimate/{diff}/{gen}/{type}/{filename}
+        # For partition_6, use test_dataset_ultimate/ instead
+        
+        partition = info["partition"]
+        output_base = "test_dataset_ultimate/" if partition == "partition_6" else OUTPUT_ULTIMATE_BASE
         
         # 1. Try-On Result
         try_on_name = f"{stem}_vton.png"
-        try_on_key = f"{OUTPUT_ULTIMATE_BASE}{diff}/{gen}/try_on_image/{try_on_name}"
+        try_on_key = f"{output_base}{diff}/{gen}/try_on_image/{try_on_name}"
         
         # 2. Initial Person Copy
         # We re-upload the PIL image we downloaded. 
         # Alternatively we could S3 Copy, but re-uploading ensures consistent naming.
         person_name = f"{stem}_person.png"
-        initial_key = f"{OUTPUT_ULTIMATE_BASE}{diff}/{gen}/initial_image/{person_name}"
+        initial_key = f"{output_base}{diff}/{gen}/initial_image/{person_name}"
         
         # 3. Cloth Copy
         cloth_filename = os.path.basename(cloth_key_s3)
@@ -184,7 +188,7 @@ async def gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer):
         # "saved using proper naming convention". 
         # Let's clean it: {stem}_cloth_{original_name}
         cloth_final_name = f"{stem}_cloth_{cloth_filename}"
-        cloth_key = f"{OUTPUT_ULTIMATE_BASE}{diff}/{gen}/cloth_image/{cloth_final_name}"
+        cloth_key = f"{output_base}{diff}/{gen}/cloth_image/{cloth_final_name}"
         
         print(f"[{stem}] Uploading triplet...")
         
@@ -239,7 +243,10 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
 
     # 2. Check Existing Outputs (Resume Logic)
     completed_stems = set()
-    output_prefix = f"{OUTPUT_ULTIMATE_BASE}{difficulty_target}/{gender_target}/try_on_image/"
+    
+    # Determine output base based on partition
+    resume_output_base = "test_dataset_ultimate/" if partition_target == "partition_6" else OUTPUT_ULTIMATE_BASE
+    output_prefix = f"{resume_output_base}{difficulty_target}/{gender_target}/try_on_image/"
     print(f"Checking existing outputs in {output_prefix}...")
     
     paginator = s3_client.get_paginator("list_objects_v2")
@@ -293,7 +300,8 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
     # 5. Save JSONL
     if jsonl_buffer:
         jsonl_filename = f"{difficulty_target}_{gender_target}_{partition_target}.jsonl"
-        jsonl_key = f"{OUTPUT_ULTIMATE_BASE}{jsonl_filename}"
+        jsonl_output_base = "test_dataset_ultimate/" if partition_target == "partition_6" else OUTPUT_ULTIMATE_BASE
+        jsonl_key = f"{jsonl_output_base}{jsonl_filename}"
         
         buffer = BytesIO()
         for item in jsonl_buffer:
