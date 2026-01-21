@@ -70,7 +70,7 @@ async def get_clothes_list(s3_client, gender):
     print(f"Found {len(clothes)} clothes for {gender}.")
     return clothes
 
-async def download_worker(uploader, person_files, clothes_list, queue):
+async def download_worker(uploader, person_files, clothes_list, queue, completed_stems):
     """
     Producer: Downloads person + random cloth + cloth prompt -> Queue
     """
@@ -79,7 +79,19 @@ async def download_worker(uploader, person_files, clothes_list, queue):
     # Sequential Processing
     person_files.sort() 
     
+    skipped_count = 0
+    
     for person_key in person_files:
+        info = parse_s3_key_info(person_key)
+        stem = info["stem"]
+        
+        # Check Resume Logic
+        if stem in completed_stems:
+            skipped_count += 1
+            if skipped_count % 100 == 0:
+                 print(f"Skipping {skipped_count} processed items...", end='\r')
+            continue
+
         if not clothes_list:
             print("Error: No clothes available!")
             break
@@ -92,8 +104,6 @@ async def download_worker(uploader, person_files, clothes_list, queue):
         prompt_key = cloth_key.replace("/images/", "/prompts/")
         prompt_key = os.path.splitext(prompt_key)[0] + ".txt"
         
-        info = parse_s3_key_info(person_key)
-        stem = info["stem"]
         diff = info["difficulty"]
         gen = info["gender"]
         
@@ -226,7 +236,27 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
         # For strict VTON, we assume script runs per gender
         return
 
-    # 2. Get Person Images (Input)
+    # 2. Check Existing Outputs (Resume Logic)
+    completed_stems = set()
+    output_prefix = f"{OUTPUT_ULTIMATE_BASE}{difficulty_target}/{gender_target}/try_on_image/"
+    print(f"Checking existing outputs in {output_prefix}...")
+    
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=output_prefix):
+        if "Contents" in page:
+            for obj in page["Contents"]:
+                key = obj["Key"]
+                filename = os.path.basename(key)
+                
+                # Output filename format: {stem}_vton.png
+                # We need to extract {stem}
+                if filename.endswith("_vton.png"):
+                    stem = filename[:-9] # remove "_vton.png"
+                    completed_stems.add(stem)
+                    
+    print(f"Found {len(completed_stems)} already processed images.")
+
+    # 3. Get Person Images (Input)
     # Search in: edited_images/{difficulty}/{gender}
     # Filter by: partition
     
@@ -249,17 +279,17 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
                 
     print(f"Found {len(person_files)} person images for VTON.")
     
-    # 3. Pipeline
+    # 4. Pipeline
     queue = asyncio.Queue(maxsize=10)
     jsonl_buffer = []
     semaphore = asyncio.Semaphore(1)
     
-    p_task = asyncio.create_task(download_worker(uploader, person_files, clothes_list, queue))
+    p_task = asyncio.create_task(download_worker(uploader, person_files, clothes_list, queue, completed_stems))
     c_task = asyncio.create_task(gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer))
     
     await asyncio.gather(p_task, c_task)
     
-    # 4. Save JSONL
+    # 5. Save JSONL
     if jsonl_buffer:
         jsonl_filename = f"{difficulty_target}_{gender_target}_{partition_target}.jsonl"
         jsonl_key = f"{OUTPUT_ULTIMATE_BASE}{jsonl_filename}"
