@@ -25,7 +25,7 @@ else:
 
 # Bucket Configuration
 S3_REGION = os.getenv("S3_REGION", "auto")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "vton-people") # Default to vton-people based on context
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "p1-to-ep1") # Default to p1-to-ep1
 
 # Hugging Face Auth
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
