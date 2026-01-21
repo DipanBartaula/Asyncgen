@@ -126,8 +126,6 @@ async def download_worker(uploader, person_files, clothes_list, queue, completed
             continue
             
         await queue.put((info, person_img, cloth_img, prompt_text, person_key, cloth_key))
-        
-    await queue.put(None)
 
 async def gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer):
     """
@@ -288,14 +286,32 @@ async def main(model_type="9b", difficulty_target=None, partition_target=None, g
     print(f"Found {len(person_files)} person images for VTON.")
     
     # 4. Pipeline
-    queue = asyncio.Queue(maxsize=10)
+    queue = asyncio.Queue(maxsize=50)
     jsonl_buffer = []
-    semaphore = asyncio.Semaphore(1)
+    semaphore = asyncio.Semaphore(1)  # Keep 1 GPU worker to avoid OOM
     
-    p_task = asyncio.create_task(download_worker(uploader, person_files, clothes_list, queue, completed_stems))
-    c_task = asyncio.create_task(gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer))
+    # Split person_files into chunks for multiple download workers
+    num_download_workers = 3
+    chunk_size = len(person_files) // num_download_workers
+    chunks = [person_files[i:i + chunk_size] for i in range(0, len(person_files), chunk_size)]
     
-    await asyncio.gather(p_task, c_task)
+    # Create multiple download workers
+    download_tasks = [
+        asyncio.create_task(download_worker(uploader, chunk, clothes_list, queue, completed_stems))
+        for chunk in chunks if chunk
+    ]
+    
+    # Create single GPU worker
+    gpu_task = asyncio.create_task(gpu_worker(generator, uploader, queue, semaphore, jsonl_buffer))
+    
+    # Wait for all download workers to finish
+    await asyncio.gather(*download_tasks)
+    
+    # Signal GPU worker to stop
+    await queue.put(None)
+    
+    # Wait for GPU worker to finish
+    await gpu_task
     
     # 5. Save JSONL
     if jsonl_buffer:
